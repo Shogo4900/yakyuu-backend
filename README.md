@@ -36,7 +36,7 @@
 { "type": "unwatch", "gameId": "2021038866" }
 ```
 
-サーバーからは以下の形式でpushされる（20秒間隔でポーリングし、直近の一球番号が
+サーバーからは以下の形式でpushされる（10秒間隔でポーリングし、直近の一球番号が
 変化したときだけ配信）。
 
 ```json
@@ -51,6 +51,7 @@
     "pitchIndex": "0910401",
     "battingTeam": "巨人攻撃中",
     "runners": { "first": true, "second": false, "third": false },
+    "runnerNames": { "first": "55 細川", "second": null, "third": null },
     "score": [
       { "team": "ヤ", "runs": "1", "active": true },
       { "team": "巨", "runs": "2", "active": false }
@@ -59,7 +60,8 @@
 }
 ```
 
-`runners`はテキストに「ランナー◯塁」の明言があったときだけ更新され、それ以外は前回の状態を維持する（打者走者がヒット後にアウトになるなどテキストが出ないケースがあるため）。イニングが切り替わったタイミングでは自動的に塁上をリセットする。
+`runners`は`#base`要素のclass属性（例: `"b100"`）から毎回そのまま取得しており、
+常に現在の実際の状態を反映する。テキスト解析には依存していない。
 
 誰も購読していない試合はポーリングを止めるので、無駄なアクセスは発生しない。
 
@@ -73,14 +75,25 @@ npm start     # 本番起動
 
 環境変数 `PORT` でポート指定可能（デフォルト3001）。
 
-## Railwayへのデプロイ
+## Renderへのデプロイ（無料）
 
 1. このディレクトリをGitHubリポジトリにpush
-2. Railwayで「New Project」→「Deploy from GitHub repo」
-3. Start Commandは `npm start`（package.jsonから自動検出されるはず）
-4. デプロイ後に発行されるURL（`https://xxxx.up.railway.app`）を
+2. [Render](https://render.com)でGitHubアカウント連携し、「New +」→「Web Service」→このリポジトリを選択
+3. 設定
+   - Runtime: Node
+   - Build Command: `npm install`
+   - Start Command: `npm start`
+   - Plan: **Free**
+4. デプロイ後に発行されるURL（`https://xxxx.onrender.com`）を
    フロントエンド側の環境変数 `NEXT_PUBLIC_API_BASE` に設定する
-   （WebSocketは `wss://xxxx.up.railway.app/ws` になる）
+   （WebSocketは `wss://xxxx.onrender.com/ws` になる）
+
+### スリープ対策（無料プラン特有の注意点）
+
+Renderの無料プランは15分間アクセスがないとスリープし、次のアクセスで起動するまで
+数十秒かかる。[UptimeRobot](https://uptimerobot.com)（無料）で`/healthz`に
+5分間隔でpingを送るよう設定すれば、実質的に常時起きた状態を維持できる
+（1サービスの運用なら、月750時間の実行時間上限にも収まる）。
 
 ## 既知の注意点・要調整ポイント
 
