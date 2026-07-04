@@ -74,6 +74,13 @@ const heartbeatTimer = setInterval(() => {
     }
     ws.isAlive = false;
     ws.ping();
+
+    // プロトコルレベルのping/pongはブラウザのJavaScriptからは見えないため、
+    // クライアント側で「接続が生きているか」を判定できるよう、
+    // 見える形のメッセージとしても生存確認を送る
+    if (ws.readyState === ws.OPEN) {
+      ws.send(JSON.stringify({ type: "heartbeat", ts: Date.now() }));
+    }
   });
 }, HEARTBEAT_INTERVAL_MS);
 
