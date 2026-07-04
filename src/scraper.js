@@ -44,6 +44,33 @@ function inferStatusFromTime(time) {
   return jstNow >= gameStart ? "試合中" : "試合前";
 }
 
+// 球場の愛称（ネーミングライツ）にチーム名がそのまま含まれるケースがあり、
+// それを誤ってチーム名の出現位置として拾ってしまうと、本来の球場名部分が
+// 空文字になり「球場未定」表示になってしまう。
+// 例: 「楽天モバイル 最強パーク宮城」の「楽天」を、球団名の「楽天」と誤検出する
+const TEAM_NAME_FALSE_POSITIVE_SUFFIX = {
+  楽天: ["モバイル"],
+};
+
+/**
+ * 球場名等に含まれる「チーム名っぽい部分文字列」を誤検出しないよう、
+ * 除外リストに該当する続き文字が無いことを確認しながらチーム名の位置を探す。
+ */
+function findTeamIndex(text, team) {
+  const excludes = TEAM_NAME_FALSE_POSITIVE_SUFFIX[team] || [];
+  let searchFrom = 0;
+  while (true) {
+    const idx = text.indexOf(team, searchFrom);
+    if (idx === -1) return -1;
+    const after = text.slice(idx + team.length, idx + team.length + 4);
+    if (excludes.some((ex) => after.startsWith(ex))) {
+      searchFrom = idx + team.length;
+      continue; // 球場名の一部などの誤検出なので、続きを探す
+    }
+    return idx;
+  }
+}
+
 /**
  * 本日の日付をJSTのYYYY-MM-DD形式で返す
  */
@@ -67,7 +94,7 @@ function parseGameCardText(text) {
   // 本文中に含まれるチーム名を、出現位置順に抽出
   const teamHits = [];
   for (const team of TEAM_NAMES) {
-    const idx = compact.indexOf(team);
+    const idx = findTeamIndex(compact, team);
     if (idx !== -1) teamHits.push({ team, idx });
   }
   teamHits.sort((a, b) => a.idx - b.idx);
@@ -77,6 +104,7 @@ function parseGameCardText(text) {
 
   // 球場名は、最初のチーム名より前の部分にあることが多い
   const venue = compact.slice(0, teamHits[0].idx).trim() || null;
+
 
   const timeMatch = compact.match(/(\d{1,2}:\d{2})/);
   const time = timeMatch ? timeMatch[1] : null;
@@ -237,6 +265,21 @@ async function fetchGameScore(gameId) {
       });
     }
   });
+
+  // 試合前はスコア表自体がまだ存在せず、scoreが空のままになることがある
+  // （表示側でチーム名が「?」になる原因）。ページの<title>には
+  // 「◯◯vs.◯◯ 一球速報」という形式でチーム名が入っているはずなので、
+  // そこから補完する。
+  if (score.length < 2) {
+    const titleText = $("title").first().text();
+    const titleMatch = titleText.match(/\d+年\d+月\d+日\s*(.+?)vs\.(.+?)\s*一球速報/);
+    if (titleMatch) {
+      score.push(
+        { team: titleMatch[1].trim(), runs: "0", active: false },
+        { team: titleMatch[2].trim(), runs: "0", active: false }
+      );
+    }
+  }
 
   return {
     gameId,
