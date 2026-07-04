@@ -1,6 +1,6 @@
 const { fetchGameScore } = require("./scraper");
 
-const POLL_INTERVAL_MS = 10000; // 実測25〜50秒に対し、検知の遅延を減らすため10秒間隔に短縮
+const POLL_INTERVAL_MS = 5000; // 実測25〜50秒に対し、検知の遅延をさらに減らすため5秒間隔に短縮
 
 /**
  * gameId ごとに {intervalHandle, subscribers:Set<ws>, lastState} を保持する。

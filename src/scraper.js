@@ -20,12 +20,29 @@ const TEAM_NAMES = [
   "阪神",
 ];
 
-const STATUS_KEYWORDS = ["試合前", "試合中", "試合終了", "見どころ", "中止", "順延", "延期"];
+const STATUS_KEYWORDS = ["中止", "順延", "延期", "試合終了", "試合中", "見どころ", "試合前"];
 
 const HEADERS = {
   "User-Agent":
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
 };
+
+/**
+ * 現在時刻(JST)が、指定した"HH:MM"の開始時刻を過ぎているかどうかで
+ * 「試合中」「試合前」を推測する。ステータスの文言が既知キーワードに
+ * 一致しない場合の最終フォールバック用（「-」表示のまま残さないため）。
+ */
+function inferStatusFromTime(time) {
+  if (!time) return null;
+  const [h, m] = time.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+
+  const jstNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
+  const gameStart = new Date(jstNow);
+  gameStart.setHours(h, m, 0, 0);
+
+  return jstNow >= gameStart ? "試合中" : "試合前";
+}
 
 /**
  * 本日の日付をJSTのYYYY-MM-DD形式で返す
@@ -70,6 +87,9 @@ function parseGameCardText(text) {
       status = kw;
       break;
     }
+  }
+  if (!status) {
+    status = inferStatusFromTime(time);
   }
 
   const pitcherMatches = [...compact.matchAll(/\(予\)([^\s()0-9]+)/g)].map((m) => m[1]);
@@ -183,6 +203,16 @@ async function fetchGameScore(gameId) {
   const lastResultText = $("#result span").first().text().trim() || null;
   const pitchInfoText = $("#result em").first().text().trim() || null;
 
+  // 「試合中止」「降雨のため」のような表記を検知する。
+  // 中止・降雨・順延・ノーゲームのいずれかが直近の結果テキストに含まれていれば中止扱い。
+  const suspendKeywords = ["中止", "降雨", "順延", "ノーゲーム"];
+  const suspended = suspendKeywords.some(
+    (kw) => (lastResultText || "").includes(kw) || (pitchInfoText || "").includes(kw)
+  );
+  const suspendedReason = suspended
+    ? [lastResultText, pitchInfoText].filter(Boolean).join(" ")
+    : null;
+
   const { bases: runners, names: runnerNames } = parseRunnersFromBase($);
 
   // #currentActionIndex の value が一球ごとの一意な番号（NPBページで確認済み）。
@@ -219,6 +249,8 @@ async function fetchGameScore(gameId) {
     battingTeam: battingTeamText,
     runners,
     runnerNames,
+    suspended,
+    suspendedReason,
     score,
   };
 }
