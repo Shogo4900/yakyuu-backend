@@ -3,6 +3,27 @@ const { fetchGameScore } = require("./scraper");
 const POLL_INTERVAL_MS = 5000; // 実測25〜50秒に対し、検知の遅延をさらに減らすため5秒間隔に短縮
 
 /**
+ * 「変化があったか」を判定するための指紋を作る。
+ * #currentActionIndex は打者が変わるタイミングでしか更新されないことが分かったため、
+ * pitchIndexだけでの比較だと、同じ打者へのボール/ストライクの増加を見逃してしまう。
+ * カウント・イニング・スコア・走者・直近の結果まで含めて比較することで、
+ * 実際に見た目が変わるタイミングを漏れなく検知する。
+ */
+function fingerprint(state) {
+  return JSON.stringify({
+    inning: state.inning,
+    count: state.count,
+    lastResult: state.lastResult,
+    pitchInfo: state.pitchInfo,
+    pitchIndex: state.pitchIndex,
+    battingTeam: state.battingTeam,
+    runners: state.runners,
+    score: state.score,
+    suspended: state.suspended,
+  });
+}
+
+/**
  * gameId ごとに {intervalHandle, subscribers:Set<ws>, lastState} を保持する。
  * 誰も見ていない試合はポーリングしないことで、スポナビ側への負荷を抑える。
  */
@@ -14,7 +35,7 @@ class PollManager {
   watch(gameId, ws) {
     let entry = this.games.get(gameId);
     if (!entry) {
-      entry = { subscribers: new Set(), lastState: null, timer: null };
+      entry = { subscribers: new Set(), lastState: null, lastFingerprint: null, timer: null };
       this.games.set(gameId, entry);
       this._startPolling(gameId, entry);
     }
@@ -53,12 +74,13 @@ class PollManager {
     const poll = async () => {
       try {
         const state = await fetchGameScore(gameId);
-        const prev = entry.lastState;
-        const changed = !prev || prev.pitchIndex !== state.pitchIndex;
+        const fp = fingerprint(state);
+        const changed = entry.lastFingerprint === null || entry.lastFingerprint !== fp;
         entry.lastState = state;
+        entry.lastFingerprint = fp;
 
         console.log(
-          `[poll] gameId=${gameId} at=${new Date().toISOString()} pitchIndex=${state.pitchIndex} changed=${changed} subscribers=${entry.subscribers.size}`
+          `[poll] gameId=${gameId} at=${new Date().toISOString()} pitchIndex=${state.pitchIndex} count=${JSON.stringify(state.count)} changed=${changed} subscribers=${entry.subscribers.size}`
         );
 
         if (changed) {
